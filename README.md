@@ -1,66 +1,62 @@
-# Unofficial PyTorch implementation of [Self-distillation Augmented Masked Autoencoders for Histopathological Image Understanding](https://arxiv.org/abs/2203.16983)
+# PyTorch implementation of [Self-distillation Augmented Masked Autoencoders for Histopathological Image Understanding](https://arxiv.org/abs/2203.16983)
 
 <div align="center">
   <img width="100%" alt="LTRP illustration" src="resource/idea.png">
 </div>
 
 ## Pretrained models
-You can choose to download only the weights of the pretrained backbone used for downstream tasks. We also provide the training/evaluation logs. 
-
 <table>
   <tr>
     <th>arch</th>
     <th>params</th>
-    <th>mAP</th>
-    <th colspan="6">download</th>
+    <th colspan="4">download</th>
   </tr>
   <tr>
     <td>ViT-S/16</td>
     <td>21M</td>
-    <td>82.8%</td>
-    <td><a href="https://drive.google.com/file/d/1e19tH58NFJYsS6AuWhNwjtBo02-rkYy1/view?usp=sharing">class model only</a></td>
-    <td><a href="https://drive.google.com/file/d/1QRwuRyrypeKkSfnH_QVMz6Chyn_q_nMD/view?usp=sharing">args</a></td>
-    <td><a href="https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing">logs</a></td>
-    <td><a href="https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing">coco best</a></td>
-    <td><a href="https://drive.google.com/file/d/1tcnPF63LF5g55DLTCwMh1w31W239KOv4/view?usp=sharing">eval logs</a></td>
+    <td><a href="https://drive.google.com/file/d/1HG-qhstOgPknRo_tix0UwnjN3qq3A7R4/view?usp=drive_link">NCT-CRC' model</a></td>
+    <td><a href="https://drive.google.com/file/d/1fEceKKzaia9YF5z6Oz5SdiWL47GI0cxa/view?usp=drive_link">NCT-CRC' logs</a></td>
+    <td><a href="https://drive.google.com/file/d/1mzGjbWp2O1YNdwwWUoUIYZDA2SYR8OZ2/view?usp=drive_link">PCam's model</a></td>
+    <td><a href="https://drive.google.com/file/d/1ElaRwbuhSH1h7bEEPRKyLn7IY9JdUBtY/view?usp=drive_link">PCam's logs</a></td>
   </tr>
 </table>
 
 
 ## Training
-Please install [PyTorch](https://pytorch.org/) and download the [ImageNet](https://imagenet.stanford.edu/) dataset. This codebase has been developed with python version 3.8, PyTorch version 1.12.1, CUDA 11.3 and torchvision 0.13.1. The exact arguments to reproduce the models presented in our paper can be found in the `args` column of the [pretrained models section](https://drive.google.com/file/d/1QRwuRyrypeKkSfnH_QVMz6Chyn_q_nMD/view?usp=sharing). 
+Please install [PyTorch](https://pytorch.org/) and download the [NCT-CRC-HE](https://zenodo.org/records/1214456) and [PatchCamelyon](https://patchcamelyon.grand-challenge.org) dataset. This codebase has been developed based on [MAE](https://github.com/pengzhiliang/MAE-pytorch). More information about requirements can be found at it. 
 
 
 
-###  Single-node training
-Run LTRP with ViT-small classing model on a single node with 8 GPUs for 400 epochs with the following command. We provide [training](https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing) logs for this run to help reproducibility.
+###  Single-node training on PatchCamelyon dataset
+Run SD-MAE with ViT-small classing model on a single node with 4 GPUs for 100 epochs with the following command. We provide [training](https://drive.google.com/file/d/1fEceKKzaia9YF5z6Oz5SdiWL47GI0cxa/view?usp=drive_link) logs for this run to help reproducibility.
 ```
-python -m torch.distributed.launch --nproc_per_node=8  ltrp/main_ltrp.py  \
-    --data_path yourpath/imagenet_2012 \
-    --batch_size 512 \
-    --model ltrp_base_and_vs \
-    --mask_ratio 0.9 \
-    --epochs 400 \
-    --resume_from_mae yourpath/mae_visualize_vit_base.pth \
-    --ltr_loss list_mleEx \
-    --list_mle_k 20 \
-    --asymmetric
-```
-
-###  Single-node finetuning on MC-COCO dataset
-```
-python -m torch.distributed.launch --nproc_per_node=4  ltrp/main_ml.py \
-    --finetune_ltrp yourpath/pretrained_ckpt.pth \
-    --finetune yourpath/mae_pretrain_vit_base.pth \
-    --data_path  yourpath/coco2017/ \
+python -m torch.distributed.launch --nproc_per_node=4  SD-MAE/run_mae_pretraining.py  \
+    --data_path yourpath/pCam \
     --batch_size 256 \
-    --decoder_embedding 768 \
+    --model ltrp_base_and_vs \
+    --mask_ratio 0.6 \
     --epochs 100 \
-    --dist_eval \
-    --score_net ltrp_cluster \
-    --keep_nums 147 \
-    --nb_classes 80 \
-    --ltrp_cluster_ratio 0.7
+    --dino_head_dim 4096 \
+    --dino_bottleneck_dim 256 \
+    --dino_hidden_dim 2048 \
+    --warmup_epochs 5 \ 
+    --lr 0.0006
 ```
 
+###  Single-node finetuning on PatchCamelyon dataset
+```
+python -m torch.distributed.launch --nproc_per_node=4  SD-MAE/run_class_finetuning.py \
+    --model vit_small_patch16_224 \
+    --finetune yourpath/checkpoint-100.pth \
+    --data_path  yourpath/pCam \
+    --batch_size 256 \
+    --opt adamw \
+    --opt_betas 0.9 0.999 \
+    --weight_decay 0.05 \
+    --epochs 100 \
+    --nb_classes 2
+    --data_set 'pCam' \
+    --lr 0.001
+
+```
 
