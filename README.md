@@ -1,104 +1,66 @@
-# Unofficial PyTorch implementation of [Masked Autoencoders Are Scalable Vision Learners](https://arxiv.org/abs/2111.06377)
+# Unofficial PyTorch implementation of [Self-distillation Augmented Masked Autoencoders for Histopathological Image Understanding](https://arxiv.org/abs/2203.16983)
 
-This repository is built upon [BEiT](https://github.com/microsoft/unilm/tree/master/beit), thanks very much!
+<div align="center">
+  <img width="100%" alt="LTRP illustration" src="resource/idea.png">
+</div>
+
+## Pretrained models
+You can choose to download only the weights of the pretrained backbone used for downstream tasks. We also provide the training/evaluation logs. 
+
+<table>
+  <tr>
+    <th>arch</th>
+    <th>params</th>
+    <th>mAP</th>
+    <th colspan="6">download</th>
+  </tr>
+  <tr>
+    <td>ViT-S/16</td>
+    <td>21M</td>
+    <td>82.8%</td>
+    <td><a href="https://drive.google.com/file/d/1e19tH58NFJYsS6AuWhNwjtBo02-rkYy1/view?usp=sharing">class model only</a></td>
+    <td><a href="https://drive.google.com/file/d/1QRwuRyrypeKkSfnH_QVMz6Chyn_q_nMD/view?usp=sharing">args</a></td>
+    <td><a href="https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing">logs</a></td>
+    <td><a href="https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing">coco best</a></td>
+    <td><a href="https://drive.google.com/file/d/1tcnPF63LF5g55DLTCwMh1w31W239KOv4/view?usp=sharing">eval logs</a></td>
+  </tr>
+</table>
 
 
-Now, we implement the pretrain and finetune process according to the paper, but still **can't guarantee** the performance reported in the paper can be reproduced! 
-
-## Difference
-
-### `shuffle` and `unshuffle`
-
-`shuffle` and `unshuffle` operations don't seem to be directly accessible in pytorch, so we use another method to realize this process:
-+ For `shuffle`, we use the method of randomly generating mask-map (14x14) in BEiT, where `mask=0` illustrates keeping the token, `mask=1` denotes dropping the token (not participating caculation in encoder). Then all visible tokens (`mask=0`) are fed into encoder network.
-+ For `unshuffle`, we get the postion embeddings (with adding the shared mask token) of all masked tokens according to the mask-map and then concate them with the visible tokens (from encoder), and feed them into the decoder network to recontrust.
-
-### sine-cosine positional embeddings
-
-The positional embeddings mentioned in the paper are `sine-cosine` version. And we adopt the implemention of [here](https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/Models.py#L31), but it seems like a 1-D embeddings not 2-D's. So we don't know what effect it will bring.
+## Training
+Please install [PyTorch](https://pytorch.org/) and download the [ImageNet](https://imagenet.stanford.edu/) dataset. This codebase has been developed with python version 3.8, PyTorch version 1.12.1, CUDA 11.3 and torchvision 0.13.1. The exact arguments to reproduce the models presented in our paper can be found in the `args` column of the [pretrained models section](https://drive.google.com/file/d/1QRwuRyrypeKkSfnH_QVMz6Chyn_q_nMD/view?usp=sharing). 
 
 
-## TODO
-- [x] implement the finetune process
-- [ ] reuse the model in `modeling_pretrain.py`
-- [x] caculate the normalized pixels target
-- [ ] add the `cls` token in the encoder
-- [x] visualization of reconstruction image
-- [ ] knn and linear prob
-- [ ] ...
 
-## Setup
-
+###  Single-node training
+Run LTRP with ViT-small classing model on a single node with 8 GPUs for 400 epochs with the following command. We provide [training](https://drive.google.com/file/d/1miK3K_bVguKO2P6nXdWhNdPvU-y0xwED/view?usp=sharing) logs for this run to help reproducibility.
 ```
-pip install -r requirements.txt
-```
-
-## Run
-1. Pretrain
-```bash
-# Set the path to save checkpoints
-OUTPUT_DIR='output/pretrain_mae_base_patch16_224'
-# path to imagenet-1k train set
-DATA_PATH='/path/to/ImageNet_ILSVRC2012/train'
-
-
-# batch_size can be adjusted according to the graphics card
-OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_mae_pretraining.py \
-        --data_path ${DATA_PATH} \
-        --mask_ratio 0.75 \
-        --model pretrain_mae_base_patch16_224 \
-        --batch_size 128 \
-        --opt adamw \
-        --opt_betas 0.9 0.95 \
-        --warmup_epochs 40 \
-        --epochs 1600 \
-        --output_dir ${OUTPUT_DIR}
+python -m torch.distributed.launch --nproc_per_node=8  ltrp/main_ltrp.py  \
+    --data_path yourpath/imagenet_2012 \
+    --batch_size 512 \
+    --model ltrp_base_and_vs \
+    --mask_ratio 0.9 \
+    --epochs 400 \
+    --resume_from_mae yourpath/mae_visualize_vit_base.pth \
+    --ltr_loss list_mleEx \
+    --list_mle_k 20 \
+    --asymmetric
 ```
 
-2. Finetune
-```bash
-# Set the path to save checkpoints
-OUTPUT_DIR='output/'
-# path to imagenet-1k set
-DATA_PATH='/path/to/ImageNet_ILSVRC2012'
-# path to pretrain model
-MODEL_PATH='/path/to/pretrain/checkpoint.pth'
-
-# batch_size can be adjusted according to the graphics card
-OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=8 run_class_finetuning.py \
-    --model vit_base_patch16_224 \
-    --data_path ${DATA_PATH} \
-    --finetune ${MODEL_PATH} \
-    --output_dir ${OUTPUT_DIR} \
-    --batch_size 128 \
-    --opt adamw \
-    --opt_betas 0.9 0.999 \
-    --weight_decay 0.05 \
+###  Single-node finetuning on MC-COCO dataset
+```
+python -m torch.distributed.launch --nproc_per_node=4  ltrp/main_ml.py \
+    --finetune_ltrp yourpath/pretrained_ckpt.pth \
+    --finetune yourpath/mae_pretrain_vit_base.pth \
+    --data_path  yourpath/coco2017/ \
+    --batch_size 256 \
+    --decoder_embedding 768 \
     --epochs 100 \
-    --dist_eval
-```
-3. Visualization of reconstruction
-```bash
-# Set the path to save images
-OUTPUT_DIR='output/'
-# path to image for visualization
-IMAGE_PATH='files/ILSVRC2012_val_00031649.JPEG'
-# path to pretrain model
-MODEL_PATH='/path/to/pretrain/checkpoint.pth'
-
-# Now, it only supports pretrained models with normalized pixel targets
-python run_mae_vis_findbest.py ${IMAGE_PATH} ${OUTPUT_DIR} ${MODEL_PATH}
+    --dist_eval \
+    --score_net ltrp_cluster \
+    --keep_nums 147 \
+    --nb_classes 80 \
+    --ltrp_cluster_ratio 0.7
 ```
 
-## Result
 
-|   model  | pretrain | finetune | accuracy | log | weight |
-|:--------:|:--------:|:--------:|:--------:| :--------:|:--------:|
-| vit-base |   400e   |   100e   |   83.1%  | [pretrain](files/pretrain_base_0.75_400e.txt) [finetune](files/pretrain_base_0.75_400e_finetune_100e.txt)| [Google drive](https://drive.google.com/drive/folders/182F5SLwJnGVngkzguTelja4PztYLTXfa?usp=sharing) [BaiduYun](https://pan.baidu.com/s/1F0u9WeckZMbNk095gUxT1g)(code: mae6)|
-| vit-large | 400e | 50e | 84.5% | [pretrain](files/pretrain_large_0.75_400e.txt) [finetune](files/pretrain_large_0.75_400e_finetune_50e.txt) | unavailable |
-
-Due to the limited gpus, it's really a chanllenge for us to pretrain with larger model or longer schedule mentioned in the paper. (the pretraining and end-to-end fine-tuning process of vit-large model are fininshed by [this enthusiastic handsome guy](https://github.com/sunsmarterjie) with many v100s, but the weights are unavailable)
-
-So if one can fininsh it, please feel free to report it in the issue or push a PR, thank you!
-
-And your star is my motivation, thank u~
